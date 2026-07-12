@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Library — Catalog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Crimson+Pro:ital,wght@0,400;0,600;0,700;1,400&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="app">
+
+  <div class="masthead">
+    <div class="logo">
+      <span class="ar">مكتبتي</span>
+      <div>
+        <span class="en">My Library</span>
+        <span class="sub">A catalog of tafsīr, ḥadīth, fiqh &amp; more — hosted on this PC</span>
+      </div>
+    </div>
+    <div>
+      <div class="stats" id="statsBox">Loading…</div>
+      <div class="date-line" id="dateLine">{{ today.gregorian }} · {{ today.hijri }}</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="Search by title or author…">
+    </div>
+    <div class="filters">
+      <select id="genreFilter"><option value="all">All genres</option></select>
+      <select id="shelfFilter"><option value="all">All shelves</option></select>
+      <select id="sortBy">
+        <option value="title">Sort: Title (A–Z)</option>
+        <option value="author">Sort: Author (A–Z)</option>
+        <option value="shelf">Sort: Shelf</option>
+        <option value="recent">Sort: Recently added</option>
+      </select>
+    </div>
+    <button class="btn btn-ghost" id="advFilterToggle" type="button">Advanced Filters ▾</button>
+    <button class="btn btn-ghost" id="scanBtn">Scan PDFs</button>
+    <button class="btn btn-ghost" id="exportBtn">Export CSV</button>
+    <label class="btn btn-ghost file-btn">
+      Import CSV
+      <input type="file" id="importFileInput" accept=".csv" style="display:none;">
+    </label>
+    <button class="btn btn-ghost" id="exportExcelBtn">Export Excel (with covers)</button>
+    <label class="btn btn-ghost file-btn">
+      Import Excel
+      <input type="file" id="importExcelFileInput" accept=".xlsx" style="display:none;">
+    </label>
+    <button class="btn btn-primary" id="addBtn">+ Add Book</button>
+  </div>
+
+  <div class="adv-filters" id="advFilterPanel" style="display:none;">
+    <div class="adv-filters-row">
+      <select id="languageFilter"><option value="all">All languages</option></select>
+      <select id="publisherFilter"><option value="all">All publishers</option></select>
+      <select id="shelfPositionFilter"><option value="all">All (Front/Back)</option></select>
+      <select id="shelfSideFilter"><option value="all">All (East/Middle/West)</option></select>
+    </div>
+    <div class="adv-filters-summary" id="filterSummary"></div>
+  </div>
+
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="emptyState" style="display:none;">
+    <span class="ar">لا كتب بعد</span>
+    No books yet — tap "+ Add Book" above to start your catalog.
+  </div>
+
+</div>
+
+<!-- Add / Edit form -->
+<div class="overlay" id="overlay">
+  <div class="form-panel">
+    <h2 id="formTitle">Add a Book</h2>
+    <p class="hint">Only the title is required — everything else can be filled in now, later, or not at all.</p>
+
+    <div class="field">
+      <label>Cover Image</label>
+      <div class="cover-row">
+        <div class="cover-preview" id="coverPreview">
+          <span class="cover-placeholder">No image</span>
+        </div>
+        <div class="cover-actions">
+          <label class="btn btn-ghost btn-sm file-btn">
+            📷 Take Photo
+            <input type="file" id="coverCameraInput" accept="image/*" capture="environment" style="display:none;">
+          </label>
+          <label class="btn btn-ghost btn-sm file-btn">
+            🖼️ Choose from Gallery
+            <input type="file" id="coverFileInput" accept="image/*" style="display:none;">
+          </label>
+          <button class="btn btn-danger btn-sm" id="removeCoverBtn" type="button" style="display:none;">Remove image</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Title *</label>
+      <input type="text" id="f_title" placeholder="e.g. Tafsīr al-Qurṭubī">
+    </div>
+
+    <div class="field">
+      <label>Author</label>
+      <input type="text" id="f_author" placeholder="e.g. Imam al-Qurṭubī">
+    </div>
+
+    <div class="row-2">
+      <div class="field">
+        <label>Author's Death Year <span class="small-note">(AH or CE)</span></label>
+        <input type="text" id="f_death" placeholder="e.g. 671 AH">
+      </div>
+      <div class="field">
+        <label>Genre</label>
+        <select id="f_genre">
+          <option value="">— None —</option>
+        </select>
+        <input type="text" id="f_genre_other" class="other-genre" placeholder="Type genre" style="display:none;">
+      </div>
+    </div>
+
+    <div class="row-2">
+      <div class="field">
+        <label>Language</label>
+        <select id="f_language">
+          <option value="">— None —</option>
+        </select>
+        <input type="text" id="f_language_other" class="other-genre" placeholder="Type language" style="display:none;">
+      </div>
+      <div class="field">
+        <label>Original or Translation</label>
+        <select id="f_translation">
+          <option value="">— None —</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row-2">
+      <div class="field">
+        <label>Publisher</label>
+        <select id="f_publisher">
+          <option value="">— None —</option>
+        </select>
+        <input type="text" id="f_publisher_other" class="other-genre" placeholder="Type publisher name" style="display:none;">
+      </div>
+      <div class="field">
+        <label>Edition</label>
+        <input type="text" id="f_edition" placeholder="e.g. 2nd edition">
+      </div>
+    </div>
+
+    <div class="row-2">
+      <div class="field">
+        <label>Year of Publication</label>
+        <input type="text" id="f_year" placeholder="e.g. 1998">
+      </div>
+      <div class="field">
+        <label>Volume</label>
+        <input type="number" id="f_volume" min="1" step="1" placeholder="e.g. 3">
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="checkbox-label"><input type="checkbox" id="f_linkToggle"> Part of an existing set already in the library</label>
+      <div id="linkPicker" class="link-picker" style="display:none;">
+        <input type="text" id="f_linkSearch" placeholder="Search by title…">
+        <div id="linkResults" class="link-results"></div>
+        <div id="linkSelected" class="link-selected" style="display:none;"></div>
+        <div class="small-note">Enter this entry's own volume count above (e.g. 7) — not the set's full total. The combined total is computed automatically.</div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Condition</label>
+      <select id="f_copytype">
+        <option value="">— None —</option>
+      </select>
+    </div>
+
+    <div class="row-2">
+      <div class="field">
+        <label>Shelf Position</label>
+        <select id="f_shelfPosition">
+          <option value="">— None —</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Shelf Side</label>
+        <select id="f_shelfSide">
+          <option value="">— None —</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Shelf Location</label>
+      <input type="text" id="f_shelf" placeholder="e.g. Shelf A, front row, 2nd from left">
+    </div>
+
+    <div class="field">
+      <label>Notes <span class="small-note">(optional)</span></label>
+      <textarea id="f_notes" placeholder="Condition, volume count, marginalia, etc."></textarea>
+    </div>
+
+    <div class="field" id="pdfInfoField" style="display:none;">
+      <label>PDF</label>
+      <div class="pdf-info" id="pdfInfo"></div>
+    </div>
+
+    <div class="form-actions">
+      <button class="btn btn-danger" id="deleteBtn" style="display:none;">Delete</button>
+      <button class="btn btn-ghost" id="cancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="saveBtn">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Scan PDFs panel -->
+<div class="overlay" id="scanOverlay">
+  <div class="form-panel">
+    <h2>Scan for PDFs</h2>
+    <p class="hint">
+      Point this at the folder where you keep your scanned/e-book PDFs. Files should be named:<br>
+      <code>book name - author - publisher - year.pdf</code><br>
+      Only the book name is required in the filename; the rest are optional but help match the right edition.
+    </p>
+    <div class="field">
+      <label>PDF Folder Path</label>
+      <input type="text" id="pdfFolderInput" placeholder="e.g. /home/you/Books/PDFs or D:\Books\PDFs">
+    </div>
+    <div class="form-actions" style="justify-content:space-between;">
+      <button class="btn btn-ghost" id="scanCancelBtn">Close</button>
+      <button class="btn btn-primary" id="scanRunBtn">Scan Now</button>
+    </div>
+    <div id="scanResults" class="scan-results"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+# Python virtual environment
+venv/
+
+# Downloaded/compiled tools (mozJPEG binary, fetched on first run)
+tools/
+
+# Python bytecode cache
+__pycache__/
+*.pyc
+
+# App data — auto-created on first run; this is your personal catalog
+# (database, cover images, remembered PDF folder path), not source code
+data/
+
+# OS / editor cruft
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
