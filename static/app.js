@@ -493,9 +493,11 @@ function setCoverPreview(src){
   if(src){
     box.innerHTML = `<img src="${src}" alt="">`;
     $("removeCoverBtn").style.display = "inline-flex";
+    $("extractCoverBtn").style.display = "inline-flex";
   } else {
     box.innerHTML = `<span class="cover-placeholder">No image</span>`;
     $("removeCoverBtn").style.display = "none";
+    $("extractCoverBtn").style.display = "none";
   }
 }
 
@@ -514,6 +516,8 @@ function openForm(id){
   $("f_shelf").value = b?.shelf || "";
   $("f_notes").value = b?.notes || "";
   $("f_translation").value = b?.isTranslation || "";
+  $("f_translator").value = b?.translator || "";
+  updateTranslatorVisibility();
   $("f_copytype").value = b?.copyType || "";
   $("f_shelfPosition").value = b?.shelfPosition || "";
   $("f_shelfSide").value = b?.shelfSide || "";
@@ -617,6 +621,7 @@ function collectForm(){
     notes: $("f_notes").value.trim(),
     language: collectKnownOrOther("f_language", "f_language_other"),
     isTranslation: $("f_translation").value,
+    translator: $("f_translation").value === "Translation" ? $("f_translator").value.trim() : "",
     copyType: $("f_copytype").value,
   };
   if(pendingCover) payload.cover = pendingCover;
@@ -701,6 +706,66 @@ function removeCover(){
   setCoverPreview(null);
 }
 
+// Returns {data, mime} for whatever cover is currently showing in the form —
+// a freshly-staged pendingCover, or (when editing) the book's saved cover
+// fetched fresh from the server — or null if there's nothing to extract from.
+async function getCoverForExtraction(){
+  if(pendingCover) return pendingCover;
+  if(editingId && editingId !== 'new' && !coverRemoved){
+    const b = books.find(x=>x.id===editingId);
+    if(b?.hasCover){
+      const res = await fetch(`/api/books/${editingId}/cover`);
+      if(!res.ok) return null;
+      const blob = await res.blob();
+      const data = await fileToBase64(blob);
+      return { data, mime: blob.type || "image/jpeg" };
+    }
+  }
+  return null;
+}
+
+const EXTRACT_FIELD_LABELS = { title:"Title", author:"Author", deathYear:"Author's Death Year", publisher:"Publisher", translator:"Translator", isTranslation:"Original/Translation" };
+
+async function extractCoverInfo(){
+  const cover = await getCoverForExtraction();
+  if(!cover){ showToast("Add a cover image first."); return; }
+  const btn = $("extractCoverBtn");
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Extracting…";
+  try{
+    const result = await api("/api/extract_cover", { method:"POST", body: JSON.stringify({cover}) });
+    if(result.notABookCover){
+      showToast("That doesn't look like a book cover — couldn't extract info.");
+      return;
+    }
+    const found = Object.keys(EXTRACT_FIELD_LABELS).filter(k=>result[k]);
+    if(!found.length){
+      showToast("Couldn't read any book details off that cover.");
+      return;
+    }
+    const msg = `Fill in ${found.map(k=>EXTRACT_FIELD_LABELS[k]).join(", ")} from the cover?\n\n(Only fields Gemini found a value for are changed — anything else you've already typed is left as-is.)`;
+    if(!confirm(msg)) return;
+    applyExtractedInfo(result);
+    showToast("Filled in from cover.");
+  }catch(e){
+    showToast("Couldn't extract info: " + e.message);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+function applyExtractedInfo(result){
+  if(result.title) $("f_title").value = result.title;
+  if(result.author) $("f_author").value = result.author;
+  if(result.deathYear) $("f_death").value = result.deathYear;
+  if(result.publisher) applyKnownOrOther("publisher", "f_publisher", "f_publisher_other", result.publisher);
+  if(result.isTranslation) $("f_translation").value = result.isTranslation;
+  if(result.translator) $("f_translator").value = result.translator;
+  updateTranslatorVisibility();
+}
+
 // ---- Scan PDFs panel ----
 
 async function openScanPanel(){
@@ -742,6 +807,47 @@ async function runScan(){
   }
 }
 
+// ---- AI Settings panel ----
+
+async function openAiSettingsPanel(){
+  $("geminiApiKeyInput").value = "";
+  $("geminiKeyStatus").textContent = "";
+  try{
+    const cfg = await api("/api/settings");
+    $("geminiKeyStatus").textContent = cfg.hasGeminiKey ? "A key is currently set." : "No key set yet.";
+  }catch(e){}
+  $("aiSettingsOverlay").classList.add("open");
+}
+
+function closeAiSettingsPanel(){
+  $("aiSettingsOverlay").classList.remove("open");
+}
+
+async function saveAiSettings(){
+  const key = $("geminiApiKeyInput").value.trim();
+  if(!key){ showToast("Enter a key to save, or use Clear key to remove it."); return; }
+  try{
+    const cfg = await api("/api/settings", { method:"POST", body: JSON.stringify({gemini_api_key: key}) });
+    $("geminiApiKeyInput").value = "";
+    $("geminiKeyStatus").textContent = cfg.hasGeminiKey ? "A key is currently set." : "No key set yet.";
+    showToast("Gemini API key saved.");
+  }catch(e){
+    showToast("Couldn't save key: " + e.message);
+  }
+}
+
+async function clearAiSettings(){
+  if(!confirm("Remove the saved Gemini API key?")) return;
+  try{
+    const cfg = await api("/api/settings", { method:"POST", body: JSON.stringify({clearGeminiKey: true}) });
+    $("geminiApiKeyInput").value = "";
+    $("geminiKeyStatus").textContent = cfg.hasGeminiKey ? "A key is currently set." : "No key set yet.";
+    showToast("Gemini API key cleared.");
+  }catch(e){
+    showToast("Couldn't clear key: " + e.message);
+  }
+}
+
 // ---- Wire up events ----
 $("addBtn").addEventListener("click", ()=>openForm(null));
 $("cancelBtn").addEventListener("click", closeForm);
@@ -750,12 +856,17 @@ $("deleteBtn").addEventListener("click", deleteCurrent);
 $("coverFileInput").addEventListener("change", handleFileUpload);
 $("coverCameraInput").addEventListener("change", handleFileUpload);
 $("removeCoverBtn").addEventListener("click", removeCover);
+$("extractCoverBtn").addEventListener("click", extractCoverInfo);
 $("overlay").addEventListener("click", (e)=>{ if(e.target.id==="overlay") closeForm(); });
 [["f_genre","f_genre_other"], ["f_language","f_language_other"], ["f_publisher","f_publisher_other"]].forEach(([selectId, otherId])=>{
   $(selectId).addEventListener("change", ()=>{
     $(otherId).style.display = $(selectId).value==="Other" ? "block" : "none";
   });
 });
+function updateTranslatorVisibility(){
+  $("f_translator_field").style.display = $("f_translation").value === "Translation" ? "block" : "none";
+}
+$("f_translation").addEventListener("change", updateTranslatorVisibility);
 ["searchInput","sortBy"].forEach(id=>{
   $(id).addEventListener("input", render);
   $(id).addEventListener("change", render);
@@ -835,6 +946,11 @@ $("bulkEditSaveBtn").addEventListener("click", async ()=>{
 $("scanBtn").addEventListener("click", openScanPanel);
 $("scanCancelBtn").addEventListener("click", closeScanPanel);
 $("scanRunBtn").addEventListener("click", runScan);
+$("aiSettingsBtn").addEventListener("click", openAiSettingsPanel);
+$("aiSettingsCancelBtn").addEventListener("click", closeAiSettingsPanel);
+$("aiSettingsSaveBtn").addEventListener("click", saveAiSettings);
+$("aiSettingsClearBtn").addEventListener("click", clearAiSettings);
+$("aiSettingsOverlay").addEventListener("click", (e)=>{ if(e.target.id==="aiSettingsOverlay") closeAiSettingsPanel(); });
 $("scanOverlay").addEventListener("click", (e)=>{ if(e.target.id==="scanOverlay") closeScanPanel(); });
 $("f_volume").addEventListener("input", ()=>{
   $("f_volume").value = $("f_volume").value.replace(/[^\d]/g, "");

@@ -23,6 +23,7 @@ import csv
 import io
 from datetime import date
 
+import requests
 from flask import Flask, g, jsonify, request, send_file, render_template, abort, Response
 from PIL import Image, ImageOps
 from openpyxl import Workbook, load_workbook
@@ -87,7 +88,7 @@ def init_db():
             shelf_side TEXT
         )
     """)
-    for col in ("language", "is_translation", "copy_type", "volume", "shelf_position", "shelf_side", "set_group_id"):
+    for col in ("language", "is_translation", "copy_type", "volume", "shelf_position", "shelf_side", "set_group_id", "translator"):
         try:
             conn.execute(f"ALTER TABLE books ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
@@ -117,6 +118,7 @@ BOOK_FIELDS = [
     Field("genre", "genre", False),
     Field("language", "language", False),
     Field("isTranslation", "is_translation", False),
+    Field("translator", "translator", False),
     Field("copyType", "copy_type", False),
     Field("shelf", "shelf", False),
     Field("shelfPosition", "shelf_position", False),
@@ -130,12 +132,13 @@ BOOK_FIELDS = [
 # ----------------------------------------------------------------------------
 
 def load_config():
+    defaults = {"pdf_folder": "", "gemini_api_key": ""}
     if CONFIG_PATH.exists():
         try:
-            return json.loads(CONFIG_PATH.read_text())
+            return {**defaults, **json.loads(CONFIG_PATH.read_text())}
         except Exception:
             pass
-    return {"pdf_folder": ""}
+    return defaults
 
 
 def save_config(cfg):
@@ -420,7 +423,8 @@ def get_options():
 
 @app.route("/api/settings", methods=["GET"])
 def get_settings():
-    return jsonify(load_config())
+    cfg = load_config()
+    return jsonify({"pdf_folder": cfg.get("pdf_folder", ""), "hasGeminiKey": bool(cfg.get("gemini_api_key"))})
 
 
 @app.route("/api/settings", methods=["POST"])
@@ -429,8 +433,131 @@ def set_settings():
     cfg = load_config()
     if "pdf_folder" in data:
         cfg["pdf_folder"] = (data["pdf_folder"] or "").strip()
+    if data.get("clearGeminiKey"):
+        cfg["gemini_api_key"] = ""
+    elif data.get("gemini_api_key"):
+        cfg["gemini_api_key"] = data["gemini_api_key"].strip()
     save_config(cfg)
-    return jsonify(cfg)
+    return jsonify({"pdf_folder": cfg.get("pdf_folder", ""), "hasGeminiKey": bool(cfg.get("gemini_api_key"))})
+
+
+# ----------------------------------------------------------------------------
+# Cover info extraction (Gemini)
+# ----------------------------------------------------------------------------
+
+class GeminiConfigError(Exception):
+    pass
+
+
+class GeminiNetworkError(Exception):
+    pass
+
+
+class GeminiResponseError(Exception):
+    pass
+
+
+GEMINI_MODEL = "gemini-flash-latest"  # alias Google keeps pointed at a current flash model — avoids
+# hardcoding a dated model id (e.g. gemini-2.5-flash) that gets deprecated for new API keys over time
+GEMINI_ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
+
+EXTRACTION_PROMPT = """You are looking at a photo of a book's cover or title page. Read exactly what is printed on it and return ONLY a JSON object (no other text) with these keys:
+- "title": the book's title as printed.
+- "author": the author's name as printed.
+- "deathYear": the author's death year exactly as printed, often in parentheses after their name (may include "AH", "CE", or the Arabic هـ). Leave "" if not shown.
+- "publisher": the publisher's name as printed.
+- "translator": the translator's name, ONLY if the cover credits someone as a translator (this means the book is a translation). Leave "" otherwise.
+- "isTranslation": "Translation" if a translator or translation is indicated on the cover, otherwise "Original".
+- "notABookCover": true if this photo is not a book cover or title page at all (e.g. a blank page, a random object, a photo of a person), otherwise false.
+
+Leave any field "" if it is not visible or you are not confident about it. Do not guess or invent values. Respond with raw JSON only, no markdown code fences."""
+
+
+def prepare_image_for_gemini(raw, mime=None, max_dim=1568):
+    """Downscale/normalize a cover photo before sending it to Gemini. Kept separate
+    from compress_image_bytes()/mozjpeg since this image is never written to disk —
+    it's sent to the API and discarded."""
+    img = Image.open(io.BytesIO(raw))
+    img = ImageOps.exif_transpose(img)
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    w, h = img.size
+    longest = max(w, h)
+    if longest > max_dim:
+        scale = max_dim / longest
+        img = img.resize((round(w * scale), round(h * scale)), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=92)
+    return buf.getvalue(), "image/jpeg"
+
+
+def call_gemini_extract(image_bytes, mime, api_key):
+    payload = {
+        "contents": [{"parts": [
+            {"text": EXTRACTION_PROMPT},
+            {"inline_data": {"mime_type": mime, "data": base64.b64encode(image_bytes).decode("ascii")}},
+        ]}],
+        "generationConfig": {"response_mime_type": "application/json"},
+    }
+    try:
+        resp = requests.post(GEMINI_ENDPOINT, params={"key": api_key}, json=payload, timeout=30)
+    except requests.RequestException as e:
+        raise GeminiNetworkError(f"Could not reach Gemini: {e}")
+
+    if resp.status_code in (400, 403):
+        raise GeminiConfigError("Gemini rejected the request — check that your API key is valid.")
+    if resp.status_code == 429:
+        raise GeminiNetworkError("Gemini rate limit reached — try again shortly.")
+    if not resp.ok:
+        raise GeminiNetworkError(f"Gemini request failed (HTTP {resp.status_code}).")
+
+    try:
+        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
+        parsed = json.loads(text)
+    except Exception:
+        raise GeminiResponseError("Gemini returned an unexpected response. Please try again or enter details manually.")
+
+    return {
+        "title": str(parsed.get("title") or "").strip(),
+        "author": str(parsed.get("author") or "").strip(),
+        "deathYear": str(parsed.get("deathYear") or "").strip(),
+        "publisher": str(parsed.get("publisher") or "").strip(),
+        "translator": str(parsed.get("translator") or "").strip(),
+        "isTranslation": parsed.get("isTranslation") if parsed.get("isTranslation") in ("Original", "Translation") else "",
+        "notABookCover": bool(parsed.get("notABookCover")),
+    }
+
+
+@app.route("/api/extract_cover", methods=["POST"])
+def extract_cover():
+    data = request.get_json(force=True) or {}
+    cover = data.get("cover") or {}
+    b64 = cover.get("data")
+    if not b64:
+        return jsonify({"error": "No cover image provided."}), 400
+
+    api_key = load_config().get("gemini_api_key", "")
+    if not api_key:
+        return jsonify({"error": "Gemini API key not set. Add one under AI Settings first."}), 400
+
+    try:
+        raw = base64.b64decode(b64)
+    except Exception:
+        return jsonify({"error": "Could not decode the image data."}), 400
+
+    try:
+        img_bytes, img_mime = prepare_image_for_gemini(raw, cover.get("mime"))
+    except Exception:
+        return jsonify({"error": "Could not process the image."}), 400
+
+    try:
+        result = call_gemini_extract(img_bytes, img_mime, api_key)
+    except GeminiConfigError as e:
+        return jsonify({"error": str(e)}), 400
+    except (GeminiNetworkError, GeminiResponseError) as e:
+        return jsonify({"error": str(e)}), 502
+
+    return jsonify(result)
 
 
 # ----------------------------------------------------------------------------

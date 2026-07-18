@@ -43,6 +43,7 @@
     <button class="btn btn-ghost" id="resetFiltersBtn" type="button">Reset Filters</button>
     <button class="btn btn-ghost" id="selectModeBtn" type="button">Select</button>
     <button class="btn btn-ghost" id="scanBtn">Scan PDFs</button>
+    <button class="btn btn-ghost" id="aiSettingsBtn" type="button">⚙️ AI Settings</button>
     <button class="btn btn-ghost" id="exportBtn">Export CSV</button>
     <label class="btn btn-ghost file-btn">
       Import CSV
@@ -104,6 +105,7 @@
             🖼️ Choose from Gallery
             <input type="file" id="coverFileInput" accept="image/*" style="display:none;">
           </label>
+          <button class="btn btn-ghost btn-sm" id="extractCoverBtn" type="button" style="display:none;">✨ Extract info from cover</button>
           <button class="btn btn-danger btn-sm" id="removeCoverBtn" type="button" style="display:none;">Remove image</button>
         </div>
       </div>
@@ -147,6 +149,11 @@
           <option value="">— None —</option>
         </select>
       </div>
+    </div>
+
+    <div class="field" id="f_translator_field" style="display:none;">
+      <label>Translator</label>
+      <input type="text" id="f_translator" placeholder="e.g. Muhammad Asad">
     </div>
 
     <div class="row-2">
@@ -247,6 +254,29 @@
       <button class="btn btn-primary" id="scanRunBtn">Scan Now</button>
     </div>
     <div id="scanResults" class="scan-results"></div>
+  </div>
+</div>
+
+<!-- AI Settings panel -->
+<div class="overlay" id="aiSettingsOverlay">
+  <div class="form-panel">
+    <h2>AI Cover Extraction Settings</h2>
+    <p class="hint">Optional: add a free Gemini API key from Google AI Studio to enable the
+      "✨ Extract info from cover" button in the Add/Edit form. This is the only feature in
+      the app that uses the internet — it sends just the cover photo you're currently viewing
+      to Google, and only when you click that button.</p>
+    <div class="field">
+      <label>Gemini API Key</label>
+      <input type="password" id="geminiApiKeyInput" placeholder="Leave blank to keep current key">
+      <div class="small-note" id="geminiKeyStatus"></div>
+    </div>
+    <div class="form-actions" style="justify-content:space-between;">
+      <button class="btn btn-danger" id="aiSettingsClearBtn" type="button">Clear key</button>
+      <div>
+        <button class="btn btn-ghost" id="aiSettingsCancelBtn" type="button">Close</button>
+        <button class="btn btn-primary" id="aiSettingsSaveBtn" type="button">Save</button>
+      </div>
+    </div>
   </div>
 </div>
 

@@ -6,19 +6,23 @@ sciences**: the default Genre list (Tafsīr, Ḥadīth, Fiqh, Uṣūl al-Fiqh,
 ʿAqīdah, Sīrah, Tārīkh, Tāsawwuf, etc.), the default Publisher list (mostly
 Arabic/Urdu publishing houses), the Language list (Arabic, Persian, Urdu),
 and the Hijri date shown alongside the Gregorian date all reflect that. Every
-one of those lists is fully editable (see [section 8](#8-customizing-the-dropdown-lists-genre-publisher-language-etc)),
+one of those lists is fully editable (see [section 9](#9-customizing-the-dropdown-lists-genre-publisher-language-etc)),
 so it can just as easily be repurposed for a general-purpose library.
 
 It stores everything in a local database and folder on that PC — **no
-internet connection is required to use it, and the app never fetches book
-info or cover images from the internet**; you enter every detail and upload
-cover photos yourself. Anyone on your home WiFi (or a private network you
-set up, e.g. a VPN like Tailscale) can open it from their own phone or
-laptop's browser.
+internet connection is required to use it day-to-day**; you enter every
+detail and upload cover photos yourself, and everything still works offline.
+The one optional exception is AI cover-info extraction (see
+[section 4](#4-auto-filling-book-info-from-a-cover-photo-optional-ai-powered)):
+if you choose to add your own free Gemini API key, a button lets you send
+just the cover photo you're looking at to Google to auto-fill the title,
+author, publisher, etc. — it's entirely opt-in and the app never does this
+on its own. Anyone on your home WiFi (or a private network you set up, e.g.
+a VPN like Tailscale) can open it from their own phone or laptop's browser.
 
 - Shows both the **Gregorian and Hijri (Islamic) date** at the top of the page.
-- **Cover images are uploaded by you and saved locally** (never fetched from
-  the internet), so they still show up even with no internet connection.
+- **Cover images are uploaded by you and saved locally**, so they still show
+  up even with no internet connection.
 - Cover photos are automatically **compressed with mozJPEG** on save — a
   multi-MB photo straight off a phone camera typically shrinks to well
   under 200 KB with no visible quality loss (covers are only ever shown as
@@ -32,18 +36,22 @@ laptop's browser.
 - **Every filter supports selecting multiple values at once** (e.g. Tafsīr
   *and* Ḥadīth together), plus one-click **Select mode** for bulk-deleting
   or bulk-moving a group of books to a new shelf.
+- **Optional AI cover-info extraction**: with your own free Gemini API key,
+  a button reads the title, author, death year, publisher, and translator
+  (if any) straight off a cover photo and fills the form for you.
 
 ## Table of contents
 
 1. [First-time setup](#1-first-time-setup)
 2. [Using it from other devices (phone, laptop) over WiFi](#2-using-it-from-other-devices-phone-laptop-over-wifi)
 3. [Adding books](#3-adding-books)
-4. [Finding books: search, filters, and bulk actions](#4-finding-books-search-filters-and-bulk-actions)
-5. [Attaching PDFs automatically](#5-attaching-pdfs-automatically)
-6. [Backing up / bulk-editing via CSV or Excel export-import](#6-backing-up--bulk-editing-via-csv-or-excel-export-import)
-7. [Where everything is stored](#7-where-everything-is-stored)
-8. [Customizing the dropdown lists (Genre, Publisher, Language, etc.)](#8-customizing-the-dropdown-lists-genre-publisher-language-etc)
-9. [Starting automatically on boot (running in the background)](#9-starting-automatically-on-boot-running-in-the-background)
+4. [Auto-filling book info from a cover photo (optional, AI-powered)](#4-auto-filling-book-info-from-a-cover-photo-optional-ai-powered)
+5. [Finding books: search, filters, and bulk actions](#5-finding-books-search-filters-and-bulk-actions)
+6. [Attaching PDFs automatically](#6-attaching-pdfs-automatically)
+7. [Backing up / bulk-editing via CSV or Excel export-import](#7-backing-up--bulk-editing-via-csv-or-excel-export-import)
+8. [Where everything is stored](#8-where-everything-is-stored)
+9. [Customizing the dropdown lists (Genre, Publisher, Language, etc.)](#9-customizing-the-dropdown-lists-genre-publisher-language-etc)
+10. [Starting automatically on boot (running in the background)](#10-starting-automatically-on-boot-running-in-the-background)
 
 ## 1. First-time setup
 
@@ -92,7 +100,7 @@ sudo ufw allow 5000
 
 **Keep the terminal window / command prompt open** while others are using
 it — closing it stops the app. Leave the PC on and the app running
-whenever you want it reachable. (See [section 9](#9-starting-automatically-on-boot-running-in-the-background)
+whenever you want it reachable. (See [section 10](#10-starting-automatically-on-boot-running-in-the-background)
 if you'd rather it start automatically and run in the background instead.)
 
 ## 3. Adding books
@@ -101,6 +109,8 @@ Tap **+ Add Book**. Only the title is required.
 
 - **Upload image**: pick a photo from your device instead (e.g. a photo
   you took of the actual cover).
+- **Translator**: only shown once you set **Original or Translation** to
+  "Translation" — enter the translator's name there.
 - Adding a second edition of a book you already own: just add a new entry
   with the same title — it'll automatically group under the same card as
   "N editions".
@@ -115,7 +125,33 @@ Tap **+ Add Book**. Only the title is required.
   expandable breakdown of each source's publisher/shelf. Unchecking that
   box later splits the entry back out on its own.
 
-## 4. Finding books: search, filters, and bulk actions
+## 4. Auto-filling book info from a cover photo (optional, AI-powered)
+
+If a cover typically shows the title, author, author's death year,
+publisher, and (for translated works) the translator, you can have Gemini
+read that off the photo for you instead of typing it in by hand.
+
+**One-time setup:**
+1. Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey).
+2. Click **⚙️ AI Settings** in the toolbar, paste the key in, and click
+   **Save**. The key is stored locally in `data/config.json` — it never
+   leaves this PC except when you actually use the extract button below.
+
+**Using it:** in the Add/Edit Book form, once a cover image is attached
+(uploaded or freshly taken), an **✨ Extract info from cover** button
+appears next to it. Click it, review the confirmation (it lists exactly
+which fields it found something for), and confirm to apply. Only fields
+Gemini actually found a value for are filled in — anything you've already
+typed, or anything Gemini couldn't read off the cover, is left untouched.
+If the photo doesn't look like a book cover at all, you'll get a message
+instead of guessed data.
+
+This is the only feature in the app that uses the internet — it sends just
+the one cover photo you're currently viewing to Google, and only when you
+click the button. Skip section entirely if you'd rather enter everything by
+hand; nothing else in the app depends on it.
+
+## 5. Finding books: search, filters, and bulk actions
 
 ### Search and filters
 
@@ -154,7 +190,7 @@ or delete just one source of a set without touching the others.
 
 Click **Done Selecting** to leave select mode.
 
-## 5. Attaching PDFs automatically
+## 6. Attaching PDFs automatically
 
 If you have PDF copies of some books:
 
@@ -183,7 +219,7 @@ What happens during a scan:
 You can re-run the scan any time you add new PDFs — it only processes new,
 unlinked files.
 
-## 6. Backing up / bulk-editing via CSV or Excel export-import
+## 7. Backing up / bulk-editing via CSV or Excel export-import
 
 The toolbar has four buttons for moving your whole catalog in and out of a
 spreadsheet:
@@ -211,12 +247,13 @@ This makes the export/import round-trip useful both as a backup mechanism
 and as a way to bulk-edit many books at once in spreadsheet software instead
 of one at a time in the app.
 
-## 7. Where everything is stored
+## 8. Where everything is stored
 
 Inside the `library_app` folder:
 - `data/library.db` — the book catalog (SQLite database)
 - `data/covers/` — uploaded cover images (already compressed)
-- `data/config.json` — remembers your PDF folder path
+- `data/config.json` — remembers your PDF folder path and (if you set one)
+  your Gemini API key
 - `tools/mozjpeg/` — the mozJPEG compressor, downloaded/built on first run;
   safe to delete (it'll just be fetched again next run), but until it's
   back, new cover photos are saved uncompressed instead of failing outright
@@ -225,11 +262,11 @@ Your actual PDF files are **not moved or copied** — the app only remembers
 their path, so keep them wherever you already have them.
 
 **Back up the `data` folder** occasionally (e.g. copy it to a USB drive, or
-use the Export Excel button from [section 6](#6-backing-up--bulk-editing-via-csv-or-excel-export-import))
+use the Export Excel button from [section 7](#7-backing-up--bulk-editing-via-csv-or-excel-export-import))
 to protect your catalog. If you ever move the PDFs to a different folder
 path, update the path in the Scan PDFs panel and scan again.
 
-## 8. Customizing the dropdown lists (Genre, Publisher, Language, etc.)
+## 9. Customizing the dropdown lists (Genre, Publisher, Language, etc.)
 
 The Add/Edit Book form has five dropdown fields: **Genre**, **Publisher**,
 **Language**, **Original or Translation**, and **Condition**. All five are
@@ -281,7 +318,7 @@ just show up under "Other…" with its original text still there. For
 Translation status/Condition (no "Other…" fallback), that book's dropdown
 will show blank until you open it and pick a value again.
 
-## 9. Starting automatically on boot (running in the background)
+## 10. Starting automatically on boot (running in the background)
 
 By default you have to open a terminal/command prompt and run
 `run.sh`/`run.bat` every time, and keep that window open. If you'd rather
