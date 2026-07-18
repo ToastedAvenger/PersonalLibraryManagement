@@ -457,8 +457,9 @@ class GeminiResponseError(Exception):
     pass
 
 
-GEMINI_MODEL = "gemini-flash-latest"  # alias Google keeps pointed at a current flash model — avoids
-# hardcoding a dated model id (e.g. gemini-2.5-flash) that gets deprecated for new API keys over time
+GEMINI_MODEL = "gemini-3.1-flash-lite"  # pinned deliberately: highest rate limits for this account/tier
+# (see aistudio.google.com/rate-limit) — swap to "gemini-flash-latest" or check that dashboard again
+# if this model id is later deprecated the same way gemini-2.5-flash was
 GEMINI_ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
 
 EXTRACTION_PROMPT = """You are looking at a photo of a book's cover or title page. Read exactly what is printed on it and return ONLY a JSON object (no other text) with these keys:
