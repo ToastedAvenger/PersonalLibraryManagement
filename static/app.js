@@ -507,6 +507,8 @@ function openForm(id){
   coverRemoved = false;
   const b = id ? books.find(x=>x.id===id) : null;
   $("formTitle").textContent = b ? "Edit Book" : "Add a Book";
+  $("f_isbn").value = b?.isbn || "";
+  $("isbnLookupStatus").textContent = "";
   $("f_title").value = b?.title || "";
   $("f_author").value = b?.author || "";
   $("f_death").value = b?.deathYear || "";
@@ -597,6 +599,7 @@ function showLinkSelected(b){
 function closeForm(){
   $("overlay").classList.remove("open");
   editingId = null;
+  closeBarcodeScanner();
 }
 
 // Reads a select+"Other" free-text pair back into a single value.
@@ -607,6 +610,7 @@ function collectKnownOrOther(selectId, otherId){
 
 function collectForm(){
   const payload = {
+    isbn: $("f_isbn").value.trim(),
     title: $("f_title").value.trim(),
     author: $("f_author").value.trim(),
     deathYear: $("f_death").value.trim(),
@@ -766,6 +770,110 @@ function applyExtractedInfo(result){
   updateTranslatorVisibility();
 }
 
+// ---- ISBN barcode scanning + lookup ----
+let barcodeReader = null;   // ZXingBrowser.BrowserMultiFormatReader instance while a scan is active
+let barcodeControls = null; // return value of decodeFromConstraints — lets us stop the camera stream
+
+const ISBN_PREFIX_RE = /^(978|979)\d{10}$/; // Bookland/EAN prefix — rejects non-book EAN-13 barcodes
+
+async function openBarcodeScanner(){
+  $("barcodeStatus").textContent = "";
+  $("barcodeOverlay").classList.add("open");
+
+  if(!navigator.mediaDevices?.getUserMedia){
+    $("barcodeStatus").textContent = "Camera scanning isn't available in this browser/connection (it needs HTTPS or localhost). Type the ISBN manually instead.";
+    return;
+  }
+  if(!window.ZXingBrowser){
+    $("barcodeStatus").textContent = "Barcode scanner library failed to load.";
+    return;
+  }
+
+  try{
+    // @zxing/browser's bundle doesn't expose DecodeHintType, so we can't restrict
+    // to EAN_13 at construction time — it decodes all supported formats instead,
+    // and ISBN_PREFIX_RE below filters for genuine book barcodes among the results.
+    barcodeReader = new ZXingBrowser.BrowserMultiFormatReader();
+
+    barcodeControls = await barcodeReader.decodeFromConstraints(
+      { video: { facingMode: { ideal: "environment" } } },
+      "barcodeVideo",
+      (result)=>{
+        if(!result) return; // fires repeatedly with no match between frames — ignore
+        const code = result.getText();
+        if(!ISBN_PREFIX_RE.test(code)){
+          $("barcodeStatus").textContent = "That doesn't look like a book barcode — keep scanning.";
+          return;
+        }
+        closeBarcodeScanner();
+        onIsbnScanned(code);
+      }
+    );
+  }catch(e){
+    if(e.name === "NotAllowedError"){
+      $("barcodeStatus").textContent = "Camera access was denied. Allow camera permission in your browser and try again.";
+    } else if(e.name === "NotFoundError"){
+      $("barcodeStatus").textContent = "No camera found on this device.";
+    } else {
+      $("barcodeStatus").textContent = "Couldn't start the camera: " + e.message;
+    }
+  }
+}
+
+function closeBarcodeScanner(){
+  $("barcodeOverlay").classList.remove("open");
+  if(barcodeControls){ barcodeControls.stop(); barcodeControls = null; }
+  barcodeReader = null;
+}
+
+function onIsbnScanned(isbn){
+  $("f_isbn").value = isbn;
+  $("isbnLookupStatus").textContent = "ISBN scanned. Click \"Look up\" to fetch book details.";
+}
+
+const ISBN_LOOKUP_FIELD_SETTERS = {
+  title:     v => { $("f_title").value = v; },
+  author:    v => { $("f_author").value = v; },
+  publisher: v => applyKnownOrOther("publisher", "f_publisher", "f_publisher_other", v),
+  year:      v => { $("f_year").value = v; },
+  edition:   v => { $("f_edition").value = v; },
+};
+
+function applyIsbnLookupInfo(result){
+  for(const [key, setter] of Object.entries(ISBN_LOOKUP_FIELD_SETTERS)){
+    if(result[key]) setter(result[key]);
+  }
+}
+
+function warnIfDuplicateIsbn(isbn){
+  const dupes = books.filter(b => b.isbn && b.isbn === isbn && b.id !== editingId);
+  if(dupes.length){
+    $("isbnLookupStatus").textContent += ` Note: ${dupes.length} other entr${dupes.length===1?"y":"ies"} in your library already ${dupes.length===1?"has":"have"} this ISBN.`;
+  }
+}
+
+async function lookupIsbn(isbn){
+  isbn = (isbn || "").trim();
+  if(!isbn){ showToast("Enter or scan an ISBN first."); return; }
+  $("isbnLookupStatus").textContent = "Looking up ISBN…";
+  try{
+    const result = await api("/api/lookup_isbn", { method:"POST", body: JSON.stringify({isbn}) });
+    applyIsbnLookupInfo(result);
+    $("isbnLookupStatus").textContent = "Filled in from Open Library.";
+    warnIfDuplicateIsbn(isbn);
+    showToast("Book info found via Open Library.");
+  }catch(e){
+    $("isbnLookupStatus").textContent = "No match on Open Library.";
+    const cover = await getCoverForExtraction();
+    if(cover){
+      showToast("No Open Library match — trying the cover photo instead…");
+      await extractCoverInfo();
+    } else {
+      showToast("No Open Library match for that ISBN. Take a cover photo, or fill in details manually.");
+    }
+  }
+}
+
 // ---- Scan PDFs panel ----
 
 async function openScanPanel(){
@@ -857,6 +965,10 @@ $("coverFileInput").addEventListener("change", handleFileUpload);
 $("coverCameraInput").addEventListener("change", handleFileUpload);
 $("removeCoverBtn").addEventListener("click", removeCover);
 $("extractCoverBtn").addEventListener("click", extractCoverInfo);
+$("scanBarcodeBtn").addEventListener("click", openBarcodeScanner);
+$("isbnLookupBtn").addEventListener("click", ()=>lookupIsbn($("f_isbn").value));
+$("barcodeCancelBtn").addEventListener("click", closeBarcodeScanner);
+$("barcodeOverlay").addEventListener("click", (e)=>{ if(e.target.id==="barcodeOverlay") closeBarcodeScanner(); });
 $("overlay").addEventListener("click", (e)=>{ if(e.target.id==="overlay") closeForm(); });
 [["f_genre","f_genre_other"], ["f_language","f_language_other"], ["f_publisher","f_publisher_other"]].forEach(([selectId, otherId])=>{
   $(selectId).addEventListener("change", ()=>{

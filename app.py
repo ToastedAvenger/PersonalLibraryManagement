@@ -2,8 +2,11 @@
 My Library — a small local web app for cataloguing a personal book collection.
 
 Run with:  python3 app.py
-Then open  http://localhost:5000   on this PC, or
-           http://<this-PC's-LAN-IP>:5000   from another device on the same WiFi.
+Then open  https://localhost:5000   on this PC, or
+           https://<this-PC's-LAN-IP>:5000   from another device on the same WiFi.
+The server uses a self-signed certificate (needed for camera/barcode-scanning access
+from a phone), so your browser will show a one-time "not trusted" warning to click
+through on each device — this is expected and safe on your own local network.
 """
 
 import base64
@@ -88,7 +91,7 @@ def init_db():
             shelf_side TEXT
         )
     """)
-    for col in ("language", "is_translation", "copy_type", "volume", "shelf_position", "shelf_side", "set_group_id", "translator"):
+    for col in ("language", "is_translation", "copy_type", "volume", "shelf_position", "shelf_side", "set_group_id", "translator", "isbn"):
         try:
             conn.execute(f"ALTER TABLE books ADD COLUMN {col} TEXT")
         except sqlite3.OperationalError:
@@ -113,6 +116,7 @@ BOOK_FIELDS = [
     Field("deathYear", "death_year", False),
     Field("publisher", "publisher", False),
     Field("edition", "edition", False),
+    Field("isbn", "isbn", False),
     Field("year", "year", False),
     Field("volume", "volume", True),
     Field("genre", "genre", False),
@@ -439,6 +443,81 @@ def set_settings():
         cfg["gemini_api_key"] = data["gemini_api_key"].strip()
     save_config(cfg)
     return jsonify({"pdf_folder": cfg.get("pdf_folder", ""), "hasGeminiKey": bool(cfg.get("gemini_api_key"))})
+
+
+# ----------------------------------------------------------------------------
+# ISBN lookup (Open Library — free, keyless)
+# ----------------------------------------------------------------------------
+
+class IsbnLookupNetworkError(Exception):
+    pass
+
+
+class IsbnLookupNotFoundError(Exception):
+    pass
+
+
+OPEN_LIBRARY_ENDPOINT = "https://openlibrary.org/api/books"
+ISBN_YEAR_RE = re.compile(r"(1[5-9]\d{2}|20\d{2})")  # first plausible 4-digit year in publish_date free text
+
+
+def normalize_isbn(raw):
+    """Strip hyphens/spaces; keep digits and a trailing X (ISBN-10 check digit)."""
+    return re.sub(r"[^0-9Xx]", "", raw or "").upper()
+
+
+def extract_isbn_year(publish_date):
+    m = ISBN_YEAR_RE.search(publish_date or "")
+    return m.group(1) if m else ""
+
+
+def call_open_library_lookup(isbn):
+    try:
+        resp = requests.get(
+            OPEN_LIBRARY_ENDPOINT,
+            params={"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"},
+            timeout=10,
+        )
+    except requests.RequestException as e:
+        raise IsbnLookupNetworkError(f"Could not reach Open Library: {e}")
+
+    if not resp.ok:
+        raise IsbnLookupNetworkError(f"Open Library request failed (HTTP {resp.status_code}).")
+
+    try:
+        payload = resp.json()
+    except Exception:
+        raise IsbnLookupNetworkError("Open Library returned an unexpected response.")
+
+    entry = payload.get(f"ISBN:{isbn}")
+    if not entry:
+        raise IsbnLookupNotFoundError("No match found for that ISBN on Open Library.")
+
+    return {
+        "title": str(entry.get("title") or "").strip(),
+        "author": ", ".join(a.get("name", "") for a in entry.get("authors", []) if a.get("name")),
+        "publisher": ", ".join(p.get("name", "") for p in entry.get("publishers", []) if p.get("name")),
+        "year": extract_isbn_year(entry.get("publish_date", "")),
+        "edition": str(entry.get("edition_name") or "").strip(),
+    }
+
+
+@app.route("/api/lookup_isbn", methods=["POST"])
+def lookup_isbn():
+    data = request.get_json(force=True) or {}
+    isbn = normalize_isbn(data.get("isbn") or "")
+    if not isbn:
+        return jsonify({"error": "No ISBN provided."}), 400
+
+    try:
+        result = call_open_library_lookup(isbn)
+    except IsbnLookupNotFoundError as e:
+        return jsonify({"error": str(e)}), 404
+    except IsbnLookupNetworkError as e:
+        return jsonify({"error": str(e)}), 502
+
+    result["isbn"] = isbn
+    return jsonify(result)
 
 
 # ----------------------------------------------------------------------------
@@ -840,4 +919,4 @@ def import_xlsx():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=5000, debug=False, ssl_context="adhoc", threaded=True)

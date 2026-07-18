@@ -112,6 +112,16 @@
     </div>
 
     <div class="field">
+      <label>ISBN <span class="small-note">(optional)</span></label>
+      <div class="isbn-row">
+        <input type="text" id="f_isbn" placeholder="e.g. 9789960899558">
+        <button class="btn btn-ghost btn-sm" id="scanBarcodeBtn" type="button">📷 Scan Barcode</button>
+        <button class="btn btn-ghost btn-sm" id="isbnLookupBtn" type="button">🔍 Look up</button>
+      </div>
+      <div class="small-note" id="isbnLookupStatus"></div>
+    </div>
+
+    <div class="field">
       <label>Title *</label>
       <input type="text" id="f_title" placeholder="e.g. Tafsīr al-Qurṭubī">
     </div>
@@ -236,6 +246,21 @@
   </div>
 </div>
 
+<!-- Barcode scanner overlay -->
+<div class="overlay" id="barcodeOverlay">
+  <div class="form-panel barcode-panel">
+    <h2>Scan ISBN Barcode</h2>
+    <p class="hint">Point your camera at the barcode on the back cover. Detection is automatic.</p>
+    <div class="barcode-video-wrap">
+      <video id="barcodeVideo" playsinline muted></video>
+    </div>
+    <div class="small-note" id="barcodeStatus"></div>
+    <div class="form-actions" style="justify-content:flex-end;">
+      <button class="btn btn-ghost" id="barcodeCancelBtn" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Scan PDFs panel -->
 <div class="overlay" id="scanOverlay">
   <div class="form-panel">
@@ -262,9 +287,8 @@
   <div class="form-panel">
     <h2>AI Cover Extraction Settings</h2>
     <p class="hint">Optional: add a free Gemini API key from Google AI Studio to enable the
-      "✨ Extract info from cover" button in the Add/Edit form. This is the only feature in
-      the app that uses the internet — it sends just the cover photo you're currently viewing
-      to Google, and only when you click that button.</p>
+      "✨ Extract info from cover" button in the Add/Edit form. It sends just the cover photo
+      you're currently viewing to Google, and only when you click that button.</p>
     <div class="field">
       <label>Gemini API Key</label>
       <input type="password" id="geminiApiKeyInput" placeholder="Leave blank to keep current key">
@@ -310,6 +334,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="{{ url_for('static', filename='vendor/zxing-browser.min.js') }}"></script>
 <script src="{{ url_for('static', filename='app.js') }}"></script>
 </body>
 </html>
