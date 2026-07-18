@@ -30,8 +30,8 @@
       <input type="text" id="searchInput" placeholder="Search by title or author…">
     </div>
     <div class="filters">
-      <select id="genreFilter"><option value="all">All genres</option></select>
-      <select id="shelfFilter"><option value="all">All shelves</option></select>
+      <div class="dropdown-filter" id="genreFilter"></div>
+      <div class="dropdown-filter" id="shelfFilter"></div>
       <select id="sortBy">
         <option value="title">Sort: Title (A–Z)</option>
         <option value="author">Sort: Author (A–Z)</option>
@@ -40,6 +40,8 @@
       </select>
     </div>
     <button class="btn btn-ghost" id="advFilterToggle" type="button">Advanced Filters ▾</button>
+    <button class="btn btn-ghost" id="resetFiltersBtn" type="button">Reset Filters</button>
+    <button class="btn btn-ghost" id="selectModeBtn" type="button">Select</button>
     <button class="btn btn-ghost" id="scanBtn">Scan PDFs</button>
     <button class="btn btn-ghost" id="exportBtn">Export CSV</button>
     <label class="btn btn-ghost file-btn">
@@ -56,10 +58,11 @@
 
   <div class="adv-filters" id="advFilterPanel" style="display:none;">
     <div class="adv-filters-row">
-      <select id="languageFilter"><option value="all">All languages</option></select>
-      <select id="publisherFilter"><option value="all">All publishers</option></select>
-      <select id="shelfPositionFilter"><option value="all">All (Front/Back)</option></select>
-      <select id="shelfSideFilter"><option value="all">All (East/Middle/West)</option></select>
+      <div class="dropdown-filter" id="languageFilter"></div>
+      <div class="dropdown-filter" id="publisherFilter"></div>
+      <div class="dropdown-filter" id="shelfPositionFilter"></div>
+      <div class="dropdown-filter" id="shelfSideFilter"></div>
+      <div class="dropdown-filter" id="translationFilter"></div>
     </div>
     <div class="adv-filters-summary" id="filterSummary"></div>
   </div>
@@ -68,6 +71,14 @@
   <div class="empty" id="emptyState" style="display:none;">
     <span class="ar">لا كتب بعد</span>
     No books yet — tap "+ Add Book" above to start your catalog.
+  </div>
+
+  <div class="selection-bar" id="selectionBar" style="display:none;">
+    <span id="selectionCount">0 books selected</span>
+    <button class="btn btn-ghost btn-sm" id="selectAllVisibleBtn" type="button">Select all visible</button>
+    <button class="btn btn-ghost btn-sm" id="clearSelectionBtn" type="button">Clear selection</button>
+    <button class="btn btn-ghost btn-sm" id="bulkEditBtn" type="button">Change shelf location…</button>
+    <button class="btn btn-danger btn-sm" id="bulkDeleteBtn" type="button">Delete</button>
   </div>
 
 </div>
@@ -236,6 +247,34 @@
       <button class="btn btn-primary" id="scanRunBtn">Scan Now</button>
     </div>
     <div id="scanResults" class="scan-results"></div>
+  </div>
+</div>
+
+<!-- Bulk edit modal -->
+<div class="overlay" id="bulkEditOverlay">
+  <div class="form-panel">
+    <h2>Change Shelf Location</h2>
+    <p class="hint">Only fields you fill in here are applied to all selected books — leave a field blank / "— don't change —" to leave it untouched. (This form cannot bulk-clear the free-text Shelf Location field to blank; edit those individually.)</p>
+    <div class="field">
+      <label>Shelf Location</label>
+      <input type="text" id="bulk_shelf" placeholder="Leave blank to not change">
+    </div>
+    <div class="field">
+      <label>Shelf Position</label>
+      <select id="bulk_shelfPosition">
+        <option value="">— don't change —</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Shelf Side</label>
+      <select id="bulk_shelfSide">
+        <option value="">— don't change —</option>
+      </select>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-ghost" id="bulkEditCancelBtn">Cancel</button>
+      <button class="btn btn-primary" id="bulkEditSaveBtn">Apply to Selected</button>
+    </div>
   </div>
 </div>
 

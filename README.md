@@ -6,7 +6,7 @@ sciences**: the default Genre list (Tafsīr, Ḥadīth, Fiqh, Uṣūl al-Fiqh,
 ʿAqīdah, Sīrah, Tārīkh, Tāsawwuf, etc.), the default Publisher list (mostly
 Arabic/Urdu publishing houses), the Language list (Arabic, Persian, Urdu),
 and the Hijri date shown alongside the Gregorian date all reflect that. Every
-one of those lists is fully editable (see [section 7](#7-customizing-the-dropdown-lists-genre-publisher-language-etc)),
+one of those lists is fully editable (see [section 8](#8-customizing-the-dropdown-lists-genre-publisher-language-etc)),
 so it can just as easily be repurposed for a general-purpose library.
 
 It stores everything in a local database and folder on that PC — **no
@@ -29,17 +29,21 @@ laptop's browser.
 - **Export/import your whole catalog as CSV or Excel** (the Excel version
   embeds the actual cover images) — handy for backups or bulk edits in a
   spreadsheet.
+- **Every filter supports selecting multiple values at once** (e.g. Tafsīr
+  *and* Ḥadīth together), plus one-click **Select mode** for bulk-deleting
+  or bulk-moving a group of books to a new shelf.
 
 ## Table of contents
 
 1. [First-time setup](#1-first-time-setup)
 2. [Using it from other devices (phone, laptop) over WiFi](#2-using-it-from-other-devices-phone-laptop-over-wifi)
 3. [Adding books](#3-adding-books)
-4. [Attaching PDFs automatically](#4-attaching-pdfs-automatically)
-5. [Backing up / bulk-editing via CSV or Excel export-import](#5-backing-up--bulk-editing-via-csv-or-excel-export-import)
-6. [Where everything is stored](#6-where-everything-is-stored)
-7. [Customizing the dropdown lists (Genre, Publisher, Language, etc.)](#7-customizing-the-dropdown-lists-genre-publisher-language-etc)
-8. [Starting automatically on boot (running in the background)](#8-starting-automatically-on-boot-running-in-the-background)
+4. [Finding books: search, filters, and bulk actions](#4-finding-books-search-filters-and-bulk-actions)
+5. [Attaching PDFs automatically](#5-attaching-pdfs-automatically)
+6. [Backing up / bulk-editing via CSV or Excel export-import](#6-backing-up--bulk-editing-via-csv-or-excel-export-import)
+7. [Where everything is stored](#7-where-everything-is-stored)
+8. [Customizing the dropdown lists (Genre, Publisher, Language, etc.)](#8-customizing-the-dropdown-lists-genre-publisher-language-etc)
+9. [Starting automatically on boot (running in the background)](#9-starting-automatically-on-boot-running-in-the-background)
 
 ## 1. First-time setup
 
@@ -88,7 +92,7 @@ sudo ufw allow 5000
 
 **Keep the terminal window / command prompt open** while others are using
 it — closing it stops the app. Leave the PC on and the app running
-whenever you want it reachable. (See [section 8](#8-starting-automatically-on-boot-running-in-the-background)
+whenever you want it reachable. (See [section 9](#9-starting-automatically-on-boot-running-in-the-background)
 if you'd rather it start automatically and run in the background instead.)
 
 ## 3. Adding books
@@ -111,7 +115,46 @@ Tap **+ Add Book**. Only the title is required.
   expandable breakdown of each source's publisher/shelf. Unchecking that
   box later splits the entry back out on its own.
 
-## 4. Attaching PDFs automatically
+## 4. Finding books: search, filters, and bulk actions
+
+### Search and filters
+
+- The **search box** matches title or author, and tolerates typos and
+  missing diacritics (e.g. searching `bukhari` finds `al-Bukhārī`).
+- The basic **Genre** and **Shelf** filters, plus **Advanced Filters**
+  (Language, Publisher, Shelf Position, Shelf Side, and **Original or
+  Translation**), are all checkbox dropdowns — click one to open it, then
+  check as many values as you like. A book matches a field once *any*
+  checked value in that field matches it; checking values in more than one
+  field narrows the results to books matching all of those fields at once.
+  Leaving a filter with nothing checked means "don't filter on this field"
+  (same as the old "All" option).
+- **Reset Filters** clears the search box, every filter, and the sort order
+  back to their defaults in one click.
+
+### Selecting multiple books for bulk actions
+
+Click **Select** in the toolbar to enter select mode — a checkbox appears
+on every book, and on each individual source inside an expanded "N sources"
+breakdown (see [multi-volume sets](#3-adding-books) above), so you can move
+or delete just one source of a set without touching the others.
+
+- A bar at the bottom shows how many books are selected, with buttons for
+  **Select all visible** (adds every book matching your current
+  search/filters to the selection) and **Clear selection**.
+- Your selection is remembered even if you change the search or filters
+  afterward — so you can select a few books, change filters to find more,
+  and keep adding to the same selection before acting on all of them.
+- **Delete** removes every selected book after one confirmation (PDF files
+  on disk are never touched, same as deleting one book at a time).
+- **Change shelf location…** opens a small form with Shelf Location, Shelf
+  Position, and Shelf Side fields — fill in only the ones you want to
+  change, leave the rest blank/"— don't change —", and only those fields
+  are applied to every selected book.
+
+Click **Done Selecting** to leave select mode.
+
+## 5. Attaching PDFs automatically
 
 If you have PDF copies of some books:
 
@@ -140,7 +183,7 @@ What happens during a scan:
 You can re-run the scan any time you add new PDFs — it only processes new,
 unlinked files.
 
-## 5. Backing up / bulk-editing via CSV or Excel export-import
+## 6. Backing up / bulk-editing via CSV or Excel export-import
 
 The toolbar has four buttons for moving your whole catalog in and out of a
 spreadsheet:
@@ -168,7 +211,7 @@ This makes the export/import round-trip useful both as a backup mechanism
 and as a way to bulk-edit many books at once in spreadsheet software instead
 of one at a time in the app.
 
-## 6. Where everything is stored
+## 7. Where everything is stored
 
 Inside the `library_app` folder:
 - `data/library.db` — the book catalog (SQLite database)
@@ -182,11 +225,11 @@ Your actual PDF files are **not moved or copied** — the app only remembers
 their path, so keep them wherever you already have them.
 
 **Back up the `data` folder** occasionally (e.g. copy it to a USB drive, or
-use the Export Excel button from [section 5](#5-backing-up--bulk-editing-via-csv-or-excel-export-import))
+use the Export Excel button from [section 6](#6-backing-up--bulk-editing-via-csv-or-excel-export-import))
 to protect your catalog. If you ever move the PDFs to a different folder
 path, update the path in the Scan PDFs panel and scan again.
 
-## 7. Customizing the dropdown lists (Genre, Publisher, Language, etc.)
+## 8. Customizing the dropdown lists (Genre, Publisher, Language, etc.)
 
 The Add/Edit Book form has five dropdown fields: **Genre**, **Publisher**,
 **Language**, **Original or Translation**, and **Condition**. All five are
@@ -238,7 +281,7 @@ just show up under "Other…" with its original text still there. For
 Translation status/Condition (no "Other…" fallback), that book's dropdown
 will show blank until you open it and pick a value again.
 
-## 8. Starting automatically on boot (running in the background)
+## 9. Starting automatically on boot (running in the background)
 
 By default you have to open a terminal/command prompt and run
 `run.sh`/`run.bat` every time, and keep that window open. If you'd rather

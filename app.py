@@ -344,6 +344,50 @@ def delete_book(book_id):
     return jsonify({"ok": True})
 
 
+@app.route("/api/books/bulk_delete", methods=["POST"])
+def bulk_delete_books():
+    data = request.get_json(force=True) or {}
+    ids = data.get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "No book ids provided."}), 400
+    db = get_db()
+    deleted = []
+    for book_id in ids:
+        if db.execute("SELECT id FROM books WHERE id = ?", (book_id,)).fetchone():
+            delete_cover(book_id)
+            db.execute("DELETE FROM books WHERE id = ?", (book_id,))
+            deleted.append(book_id)
+    db.commit()
+    return jsonify({"deleted": deleted, "notFound": [i for i in ids if i not in deleted]})
+
+
+BULK_UPDATE_FIELDS = [f for f in BOOK_FIELDS if f.json_key in ("shelf", "shelfPosition", "shelfSide")]
+
+
+@app.route("/api/books/bulk_update", methods=["POST"])
+def bulk_update_books():
+    data = request.get_json(force=True) or {}
+    ids = data.get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return jsonify({"error": "No book ids provided."}), 400
+
+    fields_to_set = [f for f in BULK_UPDATE_FIELDS if f.json_key in data]
+    if not fields_to_set:
+        return jsonify({"error": "No fields to update."}), 400
+
+    db = get_db()
+    set_clause = ", ".join(f"{f.db_col} = ?" for f in fields_to_set)
+    base_params = [field_value(f, data) for f in fields_to_set]
+
+    updated = []
+    for book_id in ids:
+        if db.execute("SELECT id FROM books WHERE id = ?", (book_id,)).fetchone():
+            db.execute(f"UPDATE books SET {set_clause} WHERE id = ?", base_params + [book_id])
+            updated.append(book_id)
+    db.commit()
+    return jsonify({"updated": updated, "notFound": [i for i in ids if i not in updated]})
+
+
 @app.route("/api/books/<book_id>/cover", methods=["GET"])
 def get_cover(book_id):
     matches = list(COVERS_DIR.glob(f"{book_id}.*"))

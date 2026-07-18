@@ -4,6 +4,8 @@ let editingId = null;      // null = not editing, 'new' = creating
 let linkTargetId = null;   // id of the entry this form's set is linked to, or null
 let pendingCover = null;   // {data, mime} staged for the current form, or null
 let coverRemoved = false;  // true if user explicitly removed the existing cover
+let selectModeOn = false;  // true while the bulk-selection UI is active
+let selectedIds = new Set(); // book ids selected for bulk actions — survives filter/search changes
 
 const $ = (id) => document.getElementById(id);
 
@@ -39,7 +41,58 @@ async function loadBooks(){
     showToast("Couldn't load your library: " + e.message);
     books = [];
   }
+  const validIds = new Set(books.map(b=>b.id));
+  [...selectedIds].forEach(id=>{ if(!validIds.has(id)) selectedIds.delete(id); });
   render();
+}
+
+// Builds a button + checkbox popover inside `container`, replacing whatever
+// was there before. Reads any previously-checked values out of the
+// container's own prior DOM first, so repeated calls (once per render, like
+// the old <select>-based populateFilters()) preserve the user's selection
+// across option-list rebuilds.
+function createCheckboxDropdown(container, values, allLabel){
+  const prevChecked = new Set(
+    [...container.querySelectorAll('input[type=checkbox]:checked')].map(cb=>cb.value)
+  );
+  // render() rebuilds every dropdown from scratch on every change (including
+  // one fired by a checkbox inside this very dropdown) — without this, that
+  // rebuild would silently close whichever panel the user just clicked in,
+  // making it impossible to check more than one box per open.
+  const wasOpen = !!container.querySelector(".dropdown-filter-panel.open");
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "dropdown-filter-btn";
+  const panel = document.createElement("div");
+  panel.className = "dropdown-filter-panel";
+  panel.innerHTML = values.map(v=>`
+    <label class="dropdown-filter-option">
+      <input type="checkbox" value="${escapeHtml(v.value)}" ${prevChecked.has(v.value)?"checked":""}>
+      ${escapeHtml(v.label)}
+    </label>`).join("") || `<div class="link-result-empty">No values yet.</div>`;
+
+  function updateBtnLabel(){
+    const n = panel.querySelectorAll('input:checked').length;
+    btn.textContent = n===0 ? `All ${allLabel}` : `${n} selected`;
+    btn.classList.toggle("active", n>0);
+  }
+  btn.addEventListener("click", (e)=>{
+    e.stopPropagation();
+    document.querySelectorAll(".dropdown-filter-panel.open").forEach(p=>{ if(p!==panel) p.classList.remove("open"); });
+    panel.classList.toggle("open");
+  });
+  panel.addEventListener("click", e=>e.stopPropagation());
+  panel.addEventListener("change", ()=>{ updateBtnLabel(); render(); });
+
+  if(wasOpen) panel.classList.add("open");
+
+  container.innerHTML = "";
+  container.append(btn, panel);
+  updateBtnLabel();
+}
+
+function getCheckedValues(containerId){
+  return [...document.querySelectorAll(`#${containerId} input[type=checkbox]:checked`)].map(cb=>cb.value);
 }
 
 async function loadOptions(){
@@ -50,6 +103,21 @@ async function loadOptions(){
     OPTION_FIELDS = {};
   }
   populateFormSelects();
+  populateBulkEditSelects();
+}
+
+// Fills the bulk-edit modal's Shelf Position / Shelf Side selects (which
+// already have a leading "— don't change —" option in the HTML) from
+// options.py, mirroring populateFormSelects() below but without the
+// "Other…" free-text fallback — bulk edit only ever picks a known value.
+function populateBulkEditSelects(){
+  for(const field of ["shelfPosition","shelfSide"]){
+    const select = $(`bulk_${field}`);
+    const cfg = OPTION_FIELDS[field];
+    if(!select || !cfg) continue;
+    const opts = cfg.options.map(o=>`<option value="${escapeHtml(o.value)}">${escapeHtml(o.label)}</option>`).join("");
+    select.innerHTML = select.querySelector('option[value=""]').outerHTML + opts;
+  }
 }
 
 // Fills a <select> (which already has its leading "— None —" option in the
@@ -169,40 +237,22 @@ function fuzzyContains(text, query){
   );
 }
 
+const FILTER_SPECS = [
+  { id:"genreFilter", field:"genre", allLabel:"genres", labelFn:genreLabel },
+  { id:"shelfFilter", field:"shelf", allLabel:"shelves", labelFn:v=>v },
+  { id:"languageFilter", field:"language", allLabel:"languages", labelFn:v=>optionLabel("language", v) },
+  { id:"publisherFilter", field:"publisher", allLabel:"publishers", labelFn:v=>optionLabel("publisher", v) },
+  { id:"shelfPositionFilter", field:"shelfPosition", allLabel:"positions", labelFn:v=>optionLabel("shelfPosition", v) },
+  { id:"shelfSideFilter", field:"shelfSide", allLabel:"sides", labelFn:v=>optionLabel("shelfSide", v) },
+  { id:"translationFilter", field:"isTranslation", allLabel:"original/translation", labelFn:v=>optionLabel("isTranslation", v) },
+];
+
 function populateFilters(){
-  const genreSel = $("genreFilter");
-  const shelfSel = $("shelfFilter");
-  const languageSel = $("languageFilter");
-  const publisherSel = $("publisherFilter");
-  const posSel = $("shelfPositionFilter");
-  const sideSel = $("shelfSideFilter");
-  const curGenre = genreSel.value, curShelf = shelfSel.value;
-  const curLanguage = languageSel.value, curPublisher = publisherSel.value;
-  const curPos = posSel.value, curSide = sideSel.value;
-  const genres = [...new Set(books.map(b=>b.genre).filter(Boolean))];
-  const shelves = [...new Set(books.map(b=>b.shelf).filter(Boolean))];
-  const languages = [...new Set(books.map(b=>b.language).filter(Boolean))];
-  const publishers = [...new Set(books.map(b=>b.publisher).filter(Boolean))];
-  const positions = [...new Set(books.map(b=>b.shelfPosition).filter(Boolean))];
-  const sides = [...new Set(books.map(b=>b.shelfSide).filter(Boolean))];
-  genreSel.innerHTML = '<option value="all">All genres</option>' +
-    genres.map(g=>`<option value="${escapeHtml(g)}">${escapeHtml(genreLabel(g))}</option>`).join("");
-  shelfSel.innerHTML = '<option value="all">All shelves</option>' +
-    shelves.map(s=>`<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join("");
-  languageSel.innerHTML = '<option value="all">All languages</option>' +
-    languages.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(optionLabel("language", v))}</option>`).join("");
-  publisherSel.innerHTML = '<option value="all">All publishers</option>' +
-    publishers.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(optionLabel("publisher", v))}</option>`).join("");
-  posSel.innerHTML = '<option value="all">All (Front/Back)</option>' +
-    positions.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(optionLabel("shelfPosition", v))}</option>`).join("");
-  sideSel.innerHTML = '<option value="all">All (East/Middle/West)</option>' +
-    sides.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(optionLabel("shelfSide", v))}</option>`).join("");
-  genreSel.value = genres.includes(curGenre) ? curGenre : "all";
-  shelfSel.value = shelves.includes(curShelf) ? curShelf : "all";
-  languageSel.value = languages.includes(curLanguage) ? curLanguage : "all";
-  publisherSel.value = publishers.includes(curPublisher) ? curPublisher : "all";
-  posSel.value = positions.includes(curPos) ? curPos : "all";
-  sideSel.value = sides.includes(curSide) ? curSide : "all";
+  FILTER_SPECS.forEach(spec=>{
+    const values = [...new Set(books.map(b=>b[spec.field]).filter(Boolean))]
+      .map(v=>({ value: v, label: spec.labelFn(v) }));
+    createCheckboxDropdown($(spec.id), values, spec.allLabel);
+  });
 }
 
 function updateStats(){
@@ -215,20 +265,22 @@ function updateStats(){
 
 function getFiltered(){
   const q = $("searchInput").value.trim();
-  const g = $("genreFilter").value;
-  const s = $("shelfFilter").value;
-  const lang = $("languageFilter").value;
-  const pub = $("publisherFilter").value;
-  const pos = $("shelfPositionFilter").value;
-  const side = $("shelfSideFilter").value;
+  const selGenre = getCheckedValues("genreFilter");
+  const selShelf = getCheckedValues("shelfFilter");
+  const selLang = getCheckedValues("languageFilter");
+  const selPub = getCheckedValues("publisherFilter");
+  const selPos = getCheckedValues("shelfPositionFilter");
+  const selSide = getCheckedValues("shelfSideFilter");
+  const selTrans = getCheckedValues("translationFilter");
   const sortBy = $("sortBy").value;
   let list = books.filter(b=>{
-    if(g!=="all" && b.genre!==g) return false;
-    if(s!=="all" && b.shelf!==s) return false;
-    if(lang!=="all" && b.language!==lang) return false;
-    if(pub!=="all" && b.publisher!==pub) return false;
-    if(pos!=="all" && b.shelfPosition!==pos) return false;
-    if(side!=="all" && b.shelfSide!==side) return false;
+    if(selGenre.length && !selGenre.includes(b.genre)) return false;
+    if(selShelf.length && !selShelf.includes(b.shelf)) return false;
+    if(selLang.length && !selLang.includes(b.language)) return false;
+    if(selPub.length && !selPub.includes(b.publisher)) return false;
+    if(selPos.length && !selPos.includes(b.shelfPosition)) return false;
+    if(selSide.length && !selSide.includes(b.shelfSide)) return false;
+    if(selTrans.length && !selTrans.includes(b.isTranslation)) return false;
     if(q && !fuzzyContains(`${b.title} ${b.author}`, q)) return false;
     return true;
   });
@@ -257,6 +309,8 @@ function render(){
 
   if(list.length===0 && books.length>0){
     grid.innerHTML = `<div class="empty" style="grid-column:1/-1;">No books match your search or filters.</div>`;
+    $("selectAllVisibleBtn").textContent = "Select all 0 visible";
+    updateSelectionBar();
     return;
   }
 
@@ -286,10 +340,40 @@ function render(){
       el.textContent = box.classList.contains("open") ? "Hide sources ▲" : `${el.dataset.count} sources ▼`;
     });
   });
+  grid.querySelectorAll(".select-checkbox").forEach(el=>{
+    el.addEventListener("change", ()=> toggleBookSelection(el.dataset.selectId, el.checked));
+  });
+  $("selectAllVisibleBtn").textContent = `Select all ${list.length} visible`;
+  updateSelectionBar();
+}
+
+// Adds/removes `id` from the persistent selection set, then re-syncs every
+// checkbox bound to that id in the current DOM (a row can appear twice — as
+// a card's main entry and again inside its own "N sources" breakdown) so
+// both stay checked/unchecked together without a full re-render.
+function toggleBookSelection(id, checked){
+  if(checked) selectedIds.add(id); else selectedIds.delete(id);
+  document.querySelectorAll(`.select-checkbox[data-select-id="${id}"]`).forEach(cb=>{ cb.checked = checked; });
+  updateSelectionBar();
+}
+
+function updateSelectionBar(){
+  const n = selectedIds.size;
+  $("selectionBar").style.display = (selectModeOn || n>0) ? "flex" : "none";
+  $("selectionCount").textContent = `${n} ${n===1?"book":"books"} selected`;
 }
 
 const SHELF_POSITION_LABELS = { Front:"F", Back:"B" };
 const SHELF_SIDE_LABELS = { East:"E", Middle:"M", West:"W" };
+
+// Checkbox for one individually-addressable book row (same id as its Edit
+// button). Hidden by CSS outside select mode. A row that appears in more
+// than one place (a set's main member also appears in its own "N sources"
+// breakdown) gets one checkbox per appearance, kept in sync via
+// toggleBookSelection() rather than being deduplicated here.
+function selectCheckboxHtml(id){
+  return `<input type="checkbox" class="select-checkbox" data-select-id="${id}" ${selectedIds.has(id)?"checked":""}>`;
+}
 
 function renderBadges(book){
   const genreTag = book.genre ? `<span class="tag">${escapeHtml(genreLabel(book.genre))}</span>` : "";
@@ -331,6 +415,7 @@ function renderSetBreakdown(unit){
           const meta = [m.publisher, m.edition, m.year].filter(Boolean).join(" · ") || "Untitled source";
           return `
           <div class="edition-item">
+            ${selectCheckboxHtml(m.id)}
             <div class="edition-meta">${escapeHtml(meta)} — ${count} ${count===1?'volume':'volumes'}</div>
             <div class="tag-row edition-tag-row">${renderBadges(m)}</div>
             <button class="link-btn" data-edit="${m.id}">Edit</button>
@@ -364,6 +449,7 @@ function renderCard(units){
           const e = u.members[0];
           return `
           <div class="edition-item">
+            ${selectCheckboxHtml(e.id)}
             <div class="edition-meta">${escapeHtml([e.publisher,e.edition,e.year].filter(Boolean).join(" · ") || "Untitled edition")}</div>
             <div class="tag-row edition-tag-row">${renderBadges(e)}</div>
             <button class="link-btn" data-edit="${e.id}">Edit</button>
@@ -380,6 +466,7 @@ function renderCard(units){
 
   return `
     <div class="card">
+      ${selectCheckboxHtml(main.id)}
       <span class="accession">No. ${String(main.accession).padStart(4,"0")}</span>
       <div class="card-body">
         <div class="card-cover">${coverHtml}</div>
@@ -669,14 +756,81 @@ $("overlay").addEventListener("click", (e)=>{ if(e.target.id==="overlay") closeF
     $(otherId).style.display = $(selectId).value==="Other" ? "block" : "none";
   });
 });
-["searchInput","genreFilter","shelfFilter","sortBy","languageFilter","publisherFilter","shelfPositionFilter","shelfSideFilter"].forEach(id=>{
+["searchInput","sortBy"].forEach(id=>{
   $(id).addEventListener("input", render);
   $(id).addEventListener("change", render);
+});
+document.addEventListener("click", ()=>{
+  document.querySelectorAll(".dropdown-filter-panel.open").forEach(p=>p.classList.remove("open"));
 });
 $("advFilterToggle").addEventListener("click", ()=>{
   const open = $("advFilterPanel").style.display !== "none";
   $("advFilterPanel").style.display = open ? "none" : "block";
   $("advFilterToggle").textContent = open ? "Advanced Filters ▾" : "Advanced Filters ▴";
+});
+$("resetFiltersBtn").addEventListener("click", ()=>{
+  $("searchInput").value = "";
+  $("sortBy").value = "title";
+  document.querySelectorAll(".dropdown-filter input[type=checkbox]:checked").forEach(cb=>{ cb.checked = false; });
+  render();
+});
+$("selectModeBtn").addEventListener("click", ()=>{
+  selectModeOn = !selectModeOn;
+  $("selectModeBtn").textContent = selectModeOn ? "Done Selecting" : "Select";
+  $("selectModeBtn").classList.toggle("btn-primary", selectModeOn);
+  document.body.classList.toggle("select-mode", selectModeOn);
+  updateSelectionBar();
+});
+$("selectAllVisibleBtn").addEventListener("click", ()=>{
+  getFiltered().forEach(b=> selectedIds.add(b.id));
+  render();
+});
+$("clearSelectionBtn").addEventListener("click", ()=>{
+  selectedIds.clear();
+  render();
+});
+$("bulkDeleteBtn").addEventListener("click", async ()=>{
+  const n = selectedIds.size;
+  if(n===0) return;
+  if(!confirm(`Delete ${n} selected book${n===1?"":"s"}? This cannot be undone. (Linked PDF files on disk are not deleted.)`)) return;
+  try{
+    const res = await api("/api/books/bulk_delete", { method:"POST", body: JSON.stringify({ids:[...selectedIds]}) });
+    res.deleted.forEach(id=> selectedIds.delete(id));
+    await loadBooks();
+    showToast(`Deleted ${res.deleted.length} book(s).`);
+  }catch(e){
+    showToast("Couldn't delete: " + e.message);
+  }
+});
+$("bulkEditBtn").addEventListener("click", ()=>{
+  if(selectedIds.size===0) return;
+  $("bulk_shelf").value = "";
+  $("bulk_shelfPosition").value = "";
+  $("bulk_shelfSide").value = "";
+  $("bulkEditOverlay").classList.add("open");
+});
+$("bulkEditCancelBtn").addEventListener("click", ()=> $("bulkEditOverlay").classList.remove("open"));
+$("bulkEditOverlay").addEventListener("click", (e)=>{ if(e.target.id==="bulkEditOverlay") $("bulkEditOverlay").classList.remove("open"); });
+$("bulkEditSaveBtn").addEventListener("click", async ()=>{
+  const payload = { ids: [...selectedIds] };
+  const shelf = $("bulk_shelf").value.trim();
+  const pos = $("bulk_shelfPosition").value;
+  const side = $("bulk_shelfSide").value;
+  if(shelf) payload.shelf = shelf;
+  if(pos) payload.shelfPosition = pos;
+  if(side) payload.shelfSide = side;
+  if(!("shelf" in payload) && !("shelfPosition" in payload) && !("shelfSide" in payload)){
+    showToast("Nothing to change — fill in at least one field.");
+    return;
+  }
+  try{
+    const res = await api("/api/books/bulk_update", { method:"POST", body: JSON.stringify(payload) });
+    $("bulkEditOverlay").classList.remove("open");
+    await loadBooks();
+    showToast(`Updated ${res.updated.length} book(s).`);
+  }catch(e){
+    showToast("Couldn't update: " + e.message);
+  }
 });
 $("scanBtn").addEventListener("click", openScanPanel);
 $("scanCancelBtn").addEventListener("click", closeScanPanel);
