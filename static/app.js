@@ -1082,12 +1082,30 @@ $("f_linkToggle").addEventListener("change", ()=>{
   }
 });
 $("f_linkSearch").addEventListener("input", renderLinkResults);
+async function downloadFilteredExport(url, filename){
+  const ids = getFiltered().map(b=>b.id);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({ids}),
+  });
+  if(!res.ok){ alert("Export failed."); return; }
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 1000);
+}
+
 $("exportBtn").addEventListener("click", ()=>{
-  window.location.href = "/api/export/csv";
+  downloadFilteredExport("/api/export/csv", "my-library-export.csv");
 });
 
 $("exportExcelBtn").addEventListener("click", ()=>{
-  window.location.href = "/api/export/xlsx";
+  downloadFilteredExport("/api/export/xlsx", "my-library-export.xlsx");
 });
 
 $("importFileInput").addEventListener("change", async (e)=>{

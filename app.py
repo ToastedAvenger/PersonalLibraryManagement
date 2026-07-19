@@ -720,10 +720,35 @@ CSV_FIELDS = ["id"] + [f.json_key for f in BOOK_FIELDS] + ["pdfPath"]
 # so CSV export/import stays text-only. The XLSX export/import (below) is the
 # format that carries actual cover pictures, for opening in Excel.
 
-@app.route("/api/export/csv", methods=["GET"])
+def fetch_export_rows(db):
+    # An "ids" list (POST JSON body, or GET query param as a comma-separated
+    # string) restricts the export to those books — used to export only the
+    # currently filtered/searched set from the UI. No ids means the whole
+    # catalog, preserving the old plain-link export behavior.
+    ids = None
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        ids = data.get("ids")
+    else:
+        ids_param = request.args.get("ids")
+        if ids_param is not None:
+            ids = [i for i in ids_param.split(",") if i]
+
+    if ids is None:
+        return db.execute("SELECT * FROM books ORDER BY title COLLATE NOCASE").fetchall()
+    if not ids:
+        return []
+    placeholders = ",".join("?" * len(ids))
+    return db.execute(
+        f"SELECT * FROM books WHERE id IN ({placeholders}) ORDER BY title COLLATE NOCASE",
+        ids,
+    ).fetchall()
+
+
+@app.route("/api/export/csv", methods=["GET", "POST"])
 def export_csv():
     db = get_db()
-    rows = db.execute("SELECT * FROM books ORDER BY title COLLATE NOCASE").fetchall()
+    rows = fetch_export_rows(db)
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=CSV_FIELDS)
     writer.writeheader()
@@ -833,10 +858,10 @@ XLSX_FORCE_TEXT_COLS = {"id", "year", "deathYear", "volume", "pdfPath"}
 COVER_DISPLAY_MAX_SIZE = (90, 120)  # px \u2014 on-screen size only; embedded bytes stay full quality
 
 
-@app.route("/api/export/xlsx", methods=["GET"])
+@app.route("/api/export/xlsx", methods=["GET", "POST"])
 def export_xlsx():
     db = get_db()
-    rows = db.execute("SELECT * FROM books ORDER BY title COLLATE NOCASE").fetchall()
+    rows = fetch_export_rows(db)
 
     header = ["Cover"] + XLSX_TEXT_FIELDS
     wb = Workbook()
